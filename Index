@@ -1,0 +1,1836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gujarat Air Quality Analysis — CPCB AQI Pipeline</title>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  :root{
+    --bg:#0e1620; --panel:#152232; --panel2:#1b2b3d; --line:#29394c;
+    --text:#e6edf3; --muted:#93a6b8; --accent:#38bdf8; --ok:#22c55e;
+    --warn:#f59e0b; --bad:#ef4444; --purple:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+       background:var(--bg);color:var(--text);font-size:13.5px;line-height:1.5}
+  header{padding:16px 24px;background:linear-gradient(90deg,#08202e,#12405a);
+         border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:19px;letter-spacing:.2px}
+  header p{margin:4px 0 0;color:#a9c4d6;font-size:12px}
+  nav{display:flex;flex-wrap:wrap;gap:6px;padding:10px 24px;background:var(--panel);
+      border-bottom:1px solid var(--line);position:sticky;top:0;z-index:99}
+  nav button{background:transparent;border:1px solid var(--line);color:var(--muted);
+      padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12.5px;font-weight:600}
+  nav button:hover{color:var(--text);border-color:#3d5470}
+  nav button.active{background:var(--accent);color:#04212f;border-color:var(--accent)}
+  main{padding:18px 24px 80px;max-width:1500px;margin:0 auto}
+  section.tab{display:none}
+  section.tab.active{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+        padding:16px 18px;margin-bottom:16px}
+  .card h2{margin:0 0 4px;font-size:15px;color:var(--accent)}
+  .card h3{margin:14px 0 6px;font-size:13px;color:#bcd3e4;text-transform:uppercase;
+        letter-spacing:.6px;font-weight:700}
+  .card .hint{color:var(--muted);font-size:12px;margin:2px 0 12px}
+  .row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .field label{font-size:11.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  select,input[type=number],input[type=text],input[type=file]{
+      background:var(--panel2);border:1px solid var(--line);color:var(--text);
+      padding:7px 10px;border-radius:7px;font-size:12.5px;min-width:130px}
+  input[type=file]{padding:5px}
+  button.btn{background:var(--accent);color:#04212f;border:none;padding:9px 18px;
+      border-radius:8px;font-weight:700;cursor:pointer;font-size:12.5px}
+  button.btn:hover{filter:brightness(1.1)}
+  button.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+  button.btn.green{background:var(--ok);color:#04210f}
+  button.btn.amber{background:var(--warn);color:#2a1a00}
+  button.btn:disabled{opacity:.45;cursor:not-allowed}
+  .log{background:#0a121b;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+       max-height:260px;overflow:auto;font-family:ui-monospace,Consolas,monospace;
+       font-size:11.8px;margin-top:10px}
+  .log div{padding:1px 0}
+  .log-info{color:#9fd0e8}
+  .log-ok{color:#5ee38a}
+  .log-warn{color:#fbbf24}
+  .log-err{color:#f87171}
+  table{border-collapse:collapse;width:100%;font-size:12px;margin-top:8px}
+  th,td{border:1px solid var(--line);padding:6px 9px;text-align:right;white-space:nowrap}
+  th{background:var(--panel2);color:#bcd3e4;font-weight:700;text-align:center;
+     position:sticky;top:0}
+  td:first-child,th:first-child{text-align:left}
+  .tbl-wrap{max-height:420px;overflow:auto;border-radius:8px;border:1px solid var(--line)}
+  .tbl-wrap table{margin:0;border:none}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+  .chart{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:6px}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .p-good{background:#00b05033;color:#4ade80;border:1px solid #4ade8055}
+  .p-sat{background:#92d05033;color:#a3e635;border:1px solid #a3e63555}
+  .p-mod{background:#ffff0033;color:#fde047;border:1px solid #fde04755}
+  .p-poor{background:#ff990033;color:#fb923c;border:1px solid #fb923c55}
+  .p-vpoor{background:#ff000033;color:#f87171;border:1px solid #f8717155}
+  .p-sev{background:#c0000033;color:#ef4444;border:1px solid #ef444455}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:10px 0}
+  .kpi{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kpi .v{font-size:22px;font-weight:800;color:var(--accent)}
+  .kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .badge{background:var(--panel2);border:1px solid var(--line);padding:3px 9px;
+      border-radius:6px;font-size:11px;color:var(--muted)}
+  .flexbetween{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  code{background:#0a121b;padding:1px 6px;border-radius:5px;color:#7dd3fc;font-size:12px}
+  .note{background:#0a121b;border-left:3px solid var(--accent);padding:8px 12px;
+        border-radius:6px;font-size:12px;color:#a9c4d6;margin:10px 0}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:#0a121b}
+  ::-webkit-scrollbar-thumb{background:#2d4257;border-radius:6px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏭 Gujarat Air Quality Analysis — CPCB AQI Pipeline</h1>
+  <p>Load → Clean → Impute → Outlier treatment → EDA → Visualise → CPCB AQI math → Export. Runs fully offline in your browser.</p>
+</header>
+
+<nav id="nav">
+  <button data-tab="load" class="active">1 · Data Load</button>
+  <button data-tab="pre">2 · Preprocessing</button>
+  <button data-tab="eda">3 · EDA</button>
+  <button data-tab="viz">4 · Visualisation</button>
+  <button data-tab="aqi">5 · AQI Mathematics</button>
+  <button data-tab="export">6 · Results &amp; Export</button>
+</nav>
+
+<main>
+
+<!-- ============ TAB 1 : DATA LOAD ============ -->
+<section id="tab-load" class="tab active">
+  <div class="card">
+    <h2>1.1 · Load Authorised Government Data</h2>
+    <p class="hint">Source: CPCB — Central Pollution Control Board (<code>app.cpcbccr.com</code>) &amp; Gujarat Pollution Control Board (<code>gpcb.gov.in</code>).
+       Download city-wise AQI bulletin CSVs (Ahmedabad, Ankleshwar, Gandhinagar, Surat, Vadodara, Vapi, Rajkot…) and drop them here.</p>
+    <div class="row">
+      <div class="field">
+        <label>Upload CPCB / GPCB CSV files (multi-select)</label>
+        <input type="file" id="fileInput" accept=".csv,.txt" multiple />
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn green" id="btnDemo">⚡ Generate Demo Gujarat Dataset</button>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn ghost" id="btnClear">Clear Data</button>
+      </div>
+    </div>
+    <div class="note">
+      <b>Expected columns (auto-detected, case/punctuation insensitive):</b>
+      <code>Date</code>, <code>Station</code> / <code>City</code>, <code>PM2.5</code>, <code>PM10</code>,
+      <code>NO2</code>, <code>SO2</code>, <code>CO</code>, <code>O3</code>, <code>NH3</code>.
+    </div>
+    <div id="log-load" class="log"></div>
+  </div>
+
+  <div class="card">
+    <h2>1.2 · Database Load Checkpoint</h2>
+    <p class="hint">Verify row counts, station coverage, date range and column integrity before cleaning.</p>
+    <div id="loadKpis" class="kpis"></div>
+    <div class="flexbetween">
+      <h3 style="margin:0">Raw Data Preview (first 15 records)</h3>
+      <span class="badge" id="rawCount">0 rows</span>
+    </div>
+    <div class="tbl-wrap" id="rawPreview"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 2 : PREPROCESSING ============ -->
+<section id="tab-pre" class="tab">
+  <div class="card">
+    <h2>2.1 · Data Audit (Before Cleaning)</h2>
+    <p class="hint">Null counts, duplicates, data-type sanity and basic distribution checks.</p>
+    <div id="auditBefore"></div>
+  </div>
+
+  <div class="card">
+    <h2>2.2 · Cleaning Configuration</h2>
+    <p class="hint">All techniques are applied station-wise and date-sorted.</p>
+    <div class="row">
+      <div class="field">
+        <label>Missing-value strategy</label>
+        <select id="optMissing">
+          <option value="ffill">Forward / Backward fill (limit 3 days)</option>
+          <option value="linear" selected>Linear interpolation (by day)</option>
+          <option value="seasonal">Seasonal mean (station × month)</option>
+          <option value="knn">KNN imputation (k = 11, z-scored)</option>
+          <option value="drop">Drop rows with missing pollutants</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Outlier treatment</label>
+        <select id="optOutlier">
+          <option value="iqr" selected>IQR capping (Winsorize, 1.5×IQR)</option>
+          <option value="zscore">Z-score capping (|z| &gt; 3)</option>
+          <option value="none">None</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Duplicates</label>
+        <select id="optDedupe">
+          <option value="yes" selected>Remove (station + date)</option>
+          <option value="no">Keep</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn" id="btnClean">▶ Run Cleaning Pipeline</button>
+      </div>
+    </div>
+    <div id="log-pre" class="log"></div>
+  </div>
+
+  <div class="card">
+    <h2>2.3 · Post-Cleaning Verification (Checkpoint)</h2>
+    <div id="auditAfter"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 3 : EDA ============ -->
+<section id="tab-eda" class="tab">
+  <div class="card">
+    <h2>3.1 · Descriptive Statistics</h2>
+    <div id="edaStats"></div>
+  </div>
+
+  <div class="card">
+    <h2>3.2 · Correlation Analysis</h2>
+    <p class="hint">Pearson correlation between pollutants. Strong PM2.5–PM10 coupling indicates common combustion/dust sources.</p>
+    <div class="grid">
+      <div id="edaCorrTbl"></div>
+      <div class="chart" id="edaCorrHeat"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3.3 · Distribution of Pollutants</h2>
+    <p class="hint">Most pollutants are right-skewed — this justifies IQR-based outlier handling rather than z-score removal.</p>
+    <div class="grid" id="edaDists"></div>
+  </div>
+
+  <div class="card">
+    <h2>3.4 · Station × Pollutant Profile</h2>
+    <p class="hint">Normalised (0–1) mean concentrations — identifies the most polluted industrial clusters.</p>
+    <div class="chart" id="edaStationHeat"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 4 : VISUALISATION ============ -->
+<section id="tab-viz" class="tab">
+  <div class="card">
+    <div class="flexbetween">
+      <h2>4.1 · Temporal Trend (Monthly Means by Station)</h2>
+      <div class="field">
+        <label>Pollutant</label>
+        <select id="vizPollutant"></select>
+      </div>
+    </div>
+    <div class="chart" id="vizTrend" style="height:430px"></div>
+  </div>
+
+  <div class="card">
+    <h2>4.2 · Seasonal Box Plots</h2>
+    <div class="row">
+      <div class="field">
+        <label>Pollutant</label>
+        <select id="vizSeasonPoll"></select>
+      </div>
+    </div>
+    <div class="chart" id="vizSeason" style="height:430px"></div>
+  </div>
+
+  <div class="card">
+    <h2>4.3 · Station Ranking (Mean Concentration)</h2>
+    <div class="chart" id="vizRank" style="height:430px"></div>
+  </div>
+
+  <div class="card">
+    <h2>4.4 · AQI Category Distribution</h2>
+    <p class="hint">Requires Step 5 (AQI calculation) to have been run first.</p>
+    <div class="grid">
+      <div class="chart" id="vizPie" style="height:380px"></div>
+      <div class="chart" id="vizStack" style="height:380px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TAB 5 : AQI ============ -->
+<section id="tab-aqi" class="tab">
+  <div class="card">
+    <h2>5.1 · CPCB Breakpoint Tables</h2>
+    <p class="hint">Piecewise-linear sub-index: I<sub>p</sub> = [ (I<sub>HI</sub>−I<sub>LO</sub>) / (B<sub>HI</sub>−B<sub>LO</sub>) ] × (C<sub>p</sub> − B<sub>LO</sub>) + I<sub>LO</sub></p>
+    <div class="tbl-wrap" id="bpTable"></div>
+  </div>
+
+  <div class="card">
+    <h2>5.2 · AQI Engine</h2>
+    <div class="row">
+      <div class="field">
+        <label>CO units in dataset</label>
+        <select id="optCO">
+          <option value="auto" selected>Auto-detect</option>
+          <option value="mg">mg/m³ (CPCB standard)</option>
+          <option value="ug">µg/m³ (convert ÷1000)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Minimum-pollutant rule</label>
+        <select id="optRelax">
+          <option value="strict" selected>CPCB strict (≥3 pollutants, PM required)</option>
+          <option value="relaxed">Relaxed (any available)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>&nbsp;</label>
+        <button class="btn" id="btnAqi">∑ Compute AQI + Maths</button>
+      </div>
+    </div>
+    <div id="log-aqi" class="log"></div>
+  </div>
+
+  <div class="card">
+    <h2>5.3 · Mathematical Validation (Checkpoint)</h2>
+    <div id="aqiValidation"></div>
+  </div>
+
+  <div class="card">
+    <h2>5.4 · Advanced Mathematical Operations</h2>
+    <p class="hint">Applied on top of the base CPCB AQI to strengthen the result.</p>
+    <div id="aqiAdvanced"></div>
+    <div class="chart" id="vizAqiTrend" style="height:420px"></div>
+  </div>
+</section>
+
+<!-- ============ TAB 6 : EXPORT ============ -->
+<section id="tab-export" class="tab">
+  <div class="card">
+    <h2>6.1 · Summary Output</h2>
+    <div id="exportSummary"></div>
+  </div>
+  <div class="card">
+    <h2>6.2 · Download</h2>
+    <div class="row">
+      <button class="btn" id="dlProcessed">⬇ Processed + AQI dataset (CSV)</button>
+      <button class="btn ghost" id="dlSummary">⬇ Station summary (CSV)</button>
+      <button class="btn ghost" id="dlMonthly">⬇ Monthly AQI matrix (CSV)</button>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<script>
+/* ==========================================================================
+   GLOBAL STATE
+   ========================================================================== */
+const POLLUTANTS = ['pm25','pm10','no2','so2','co','o3','nh3'];
+const LABEL = {pm25:'PM2.5', pm10:'PM10', no2:'NO2', so2:'SO2', co:'CO', o3:'O3', nh3:'NH3'};
+const UNIT  = {pm25:'µg/m³', pm10:'µg/m³', no2:'µg/m³', so2:'µg/m³', co:'mg/m³', o3:'µg/m³', nh3:'µg/m³'};
+
+const state = {
+  raw: [],        // parsed raw records
+  clean: [],      // cleaned records
+  stations: [],
+  aqiDone: false
+};
+
+/* ==========================================================================
+   SMALL HELPERS
+   ========================================================================== */
+function $(id){ return document.getElementById(id); }
+
+function logTo(elId, msg, type){
+  const el = $(elId);
+  if (!el) return;
+  const d = document.createElement('div');
+  d.className = 'log-' + (type || 'info');
+  d.textContent = msg;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+function clearLog(elId){ const e = $(elId); if (e) e.innerHTML = ''; }
+
+function mean(a){ if(!a.length) return NaN; let s=0; for(const v of a) s+=v; return s/a.length; }
+function std(a){
+  if(a.length<2) return 0;
+  const m = mean(a); let s=0;
+  for(const v of a) s += (v-m)*(v-m);
+  return Math.sqrt(s/(a.length-1));
+}
+function quantile(sorted, q){
+  if(!sorted.length) return NaN;
+  const pos = (sorted.length-1)*q;
+  const base = Math.floor(pos);
+  const rest = pos - base;
+  if(sorted[base+1] !== undefined) return sorted[base] + rest*(sorted[base+1]-sorted[base]);
+  return sorted[base];
+}
+function pearson(x, y){
+  const n = Math.min(x.length, y.length);
+  if(n < 3) return NaN;
+  const mx = mean(x.slice(0,n)), my = mean(y.slice(0,n));
+  let num=0, dx=0, dy=0;
+  for(let i=0;i<n;i++){
+    const a = x[i]-mx, b = y[i]-my;
+    num += a*b; dx += a*a; dy += b*b;
+  }
+  if(dx===0 || dy===0) return NaN;
+  return num/Math.sqrt(dx*dy);
+}
+function groupBy(arr, keyFn){
+  const m = {};
+  for(const r of arr){
+    const k = keyFn(r);
+    (m[k] = m[k] || []).push(r);
+  }
+  return m;
+}
+function fmt(v, d){
+  if(v===null || v===undefined || !isFinite(v)) return '—';
+  return Number(v).toFixed(d===undefined?2:d);
+}
+function dateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function seasonOf(m){
+  if(m===12 || m===1 || m===2) return 'Winter';
+  if(m>=3 && m<=5) return 'Summer';
+  if(m>=6 && m<=9) return 'Monsoon';
+  return 'Post-Monsoon';
+}
+
+/* ==========================================================================
+   TAB NAVIGATION
+   ========================================================================== */
+document.querySelectorAll('#nav button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('section.tab').forEach(s=>s.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-' + btn.dataset.tab).classList.add('active');
+    setTimeout(()=>{ window.dispatchEvent(new Event('resize')); }, 60);
+  });
+});
+
+/* ==========================================================================
+   PARSING UTILITIES
+   ========================================================================== */
+function normKey(s){ return String(s).toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+const ALIASES = {
+  date:    ['date','datetime','datetimestamp','timestamp','aqibulletindate','dateofbulletin',
+            'samplingdate','fromdate','todate','dateofsampling','monitoringdate'],
+  station: ['station','stationname','city','location','monitoringstation','site',
+            'monitoringsite','stationid','nameofstation','area'],
+  pm25:    ['pm25','pm2p5','pm25ugm3','pm25ugm3','rspm25','finepm'],
+  pm10:    ['pm10','pm10ugm3','rspm','spm10'],
+  no2:     ['no2','nitrogendioxide','nitrogen dioxide'],
+  so2:     ['so2','sulphurdioxide','sulfurdioxide','sulphur dioxide'],
+  co:      ['co','carbonmonoxide','carbon monoxide'],
+  o3:      ['o3','ozone'],
+  nh3:     ['nh3','ammonia']
+};
+
+function buildColumnMap(headers){
+  const map = {};
+  for(const h of headers){
+    const k = normKey(h);
+    for(const field in ALIASES){
+      if(!(field in map) && ALIASES[field].indexOf(k) !== -1){
+        map[field] = h;
+      }
+    }
+  }
+  return map;
+}
+
+function parseDate(v){
+  if(v instanceof Date) return isNaN(v) ? null : v;
+  if(v===null || v===undefined) return null;
+  const s = String(v).trim();
+  if(!s) return null;
+
+  // YYYY-MM-DD or YYYY/MM/DD
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+
+  // DD-MM-YYYY or DD/MM/YYYY (Indian convention)
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/);
+  if(m){
+    let a = +m[1], b = +m[2], y = +m[3];
+    if(y < 100) y += 2000;
+    let d, mo;
+    if(a > 12 && b <= 12){ d = a; mo = b; }
+    else if(b > 12 && a <= 12){ d = b; mo = a; }
+    else { d = a; mo = b; }   // default DD-MM
+    return new Date(y, mo-1, d);
+  }
+
+  const d2 = new Date(s);
+  return isNaN(d2.getTime()) ? null : d2;
+}
+
+function toNum(v){
+  if(v===null || v===undefined) return null;
+  if(typeof v === 'number') return isFinite(v) ? v : null;
+  const s = String(v).trim();
+  if(!s) return null;
+  if(/^(na|n\/a|nan|null|nil|none|-|--|---|\.)$/i.test(s)) return null;
+  const n = Number(s.replace(/,/g,'').replace(/[^\d.eE+-]/g,''));
+  return isFinite(n) ? n : null;
+}
+
+/* ==========================================================================
+   DATA INGESTION
+   ========================================================================== */
+function ingestRows(rawRows, sourceName){
+  if(!rawRows || !rawRows.length) return 0;
+  const headers = Object.keys(rawRows[0]);
+  const map = buildColumnMap(headers);
+
+  if(!map.date){
+    logTo('log-load', '✗ ' + sourceName + ' — no date column found. Headers: ' + headers.join(' | '), 'err');
+    return 0;
+  }
+  logTo('log-load', '↳ ' + sourceName + ' — column map: ' +
+        Object.keys(map).map(f => f + '→"' + map[f] + '"').join(', '), 'info');
+
+  let added = 0;
+  for(const r of rawRows){
+    const date = parseDate(r[map.date]);
+    if(!date) continue;
+    let station = map.station ? String(r[map.station] || '').trim() : '';
+    if(!station) station = sourceName.replace(/\.csv$/i,'').replace(/_AQIBulletins$/i,'');
+    if(!station) station = 'Unknown';
+
+    const obj = { date: date, station: station, _source: sourceName };
+    for(const p of POLLUTANTS){
+      obj[p] = map[p] ? toNum(r[map[p]]) : null;
+    }
+    state.raw.push(obj);
+    added++;
+  }
+  return added;
+}
+
+function handleFiles(files){
+  let pending = files.length;
+  if(!pending) return;
+  Array.from(files).forEach(file=>{
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: 'greedy',
+      dynamicTyping: false,
+      complete: function(res){
+        const n = ingestRows(res.data, file.name);
+        logTo('log-load', '✓ ' + file.name + ' — ingested ' + n + ' valid rows.', n ? 'ok' : 'warn');
+        if(--pending === 0) refreshLoadTab();
+      },
+      error: function(err){
+        logTo('log-load', '✗ ' + file.name + ' — parse error: ' + err.message, 'err');
+        if(--pending === 0) refreshLoadTab();
+      }
+    });
+  });
+}
+
+/* ==========================================================================
+   DEMO DATA GENERATOR (realistic Gujarat patterns)
+   ========================================================================== */
+function randn(){
+  let u=0, v=0;
+  while(u===0) u = Math.random();
+  while(v===0) v = Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function generateDemoData(){
+  const stations = [
+    { name:'Ahmedabad',   f:1.25 },
+    { name:'Ankleshwar',  f:1.48 },
+    { name:'Vapi',        f:1.42 },
+    { name:'Surat',       f:1.12 },
+    { name:'Vadodara',    f:1.18 },
+    { name:'Rajkot',      f:0.90 },
+    { name:'Gandhinagar', f:0.96 }
+  ];
+  const base = { pm25:56, pm10:112, no2:38, so2:14, co:1.05, o3:44, nh3:27 };
+  const start = new Date(2021,0,1);
+  const end   = new Date(2023,11,31);
+  const out = [];
+
+  for(const st of stations){
+    for(let d = new Date(start); d <= end; d.setDate(d.getDate()+1)){
+      const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const doy = Math.floor((date - new Date(date.getFullYear(),0,0)) / 86400000);
+      const month = date.getMonth()+1;
+
+      const winter  = 1 + 0.60*Math.cos(2*Math.PI*(doy-20)/365);
+      const summer  = 1 + 0.30*Math.cos(2*Math.PI*(doy-120)/365);
+      const washout = (month>=6 && month<=9) ? 0.52 : 1;
+      const postMon = (month>=10 && month<=11) ? 1.14 : 1;
+      const trend   = 1 - 0.055*((date.getFullYear()-2021) + date.getMonth()/12); // gradual improvement
+
+      const weekend = (date.getDay()===0 || date.getDay()===6) ? 0.88 : 1;
+
+      const rec = { date: date, station: st.name, _source: 'demo' };
+
+      for(const p of POLLUTANTS){
+        let sf;
+        if(p === 'o3')       sf = summer;
+        else if(p === 'co')  sf = winter * washout;
+        else if(p === 'nh3') sf = (1 + 0.28*Math.cos(2*Math.PI*(doy-150)/365)) * washout;
+        else                 sf = winter * washout * postMon;
+
+        let v = base[p] * st.f * sf * trend * weekend;
+        v *= (1 + 0.22*randn());
+
+        // inject occasional pollution episodes (outliers)
+        if(Math.random() < 0.018) v *= (2.0 + Math.random()*1.6);
+
+        if(v < 0.01) v = 0.01;
+        rec[p] = Math.round(v*100)/100;
+      }
+
+      // inject realistic missingness (~4% per pollutant, occasional runs)
+      for(const p of POLLUTANTS){
+        if(Math.random() < 0.04) rec[p] = null;
+      }
+      if(Math.random() < 0.012){
+        const p = POLLUTANTS[Math.floor(Math.random()*POLLUTANTS.length)];
+        for(let k=0;k<4;k++){
+          const dd = new Date(date); dd.setDate(dd.getDate()+k);
+          out.push(Object.assign({}, rec, { date: dd, station: st.name, [p]: null }));
+        }
+      }
+
+      out.push(rec);
+    }
+  }
+
+  // inject duplicate records (to exercise dedupe)
+  for(let i=0;i<40;i++){
+    const src = out[Math.floor(Math.random()*out.length)];
+    out.push(Object.assign({}, src));
+  }
+
+  state.raw = state.raw.concat(out);
+  logTo('log-load', '✓ Demo dataset generated: ' + out.length +
+        ' rows × 7 Gujarat stations (2021–2023), with injected gaps, outliers and duplicates.', 'ok');
+  refreshLoadTab();
+}
+
+/* ==========================================================================
+   TAB 1 REFRESH
+   ========================================================================== */
+function refreshLoadTab(){
+  const rows = state.raw;
+  const stations = [...new Set(rows.map(r=>r.station))].sort();
+  state.stations = stations;
+
+  let dmin = null, dmax = null;
+  for(const r of rows){
+    if(!dmin || r.date < dmin) dmin = r.date;
+    if(!dmax || r.date > dmax) dmax = r.date;
+  }
+  const complete = rows.filter(r => POLLUTANTS.every(p => r[p]!==null && isFinite(r[p]))).length;
+
+  $('loadKpis').innerHTML = [
+    ['Total records', rows.length.toLocaleString()],
+    ['Stations', stations.length],
+    ['Date range', dmin ? dateKey(dmin)+' → '+dateKey(dmax) : '—'],
+    ['Complete rows', complete.toLocaleString() + ' (' + (rows.length ? (complete/rows.length*100).toFixed(1) : 0) + '%)']
+  ].map(k => '<div class="kpi"><div class="v">'+k[1]+'</div><div class="l">'+k[0]+'</div></div>').join('');
+
+  const cols = ['date','station'].concat(POLLUTANTS);
+  const preview = rows.slice(0,15).map(r=>{
+    const o = { date: dateKey(r.date), station: r.station };
+    for(const p of POLLUTANTS) o[p] = (r[p]===null||r[p]===undefined) ? '' : r[p];
+    return o;
+  });
+  renderTable('rawPreview', cols, preview, { date:'Date', station:'Station' });
+  $('rawCount').textContent = rows.length.toLocaleString() + ' rows';
+
+  // audit-before panel
+  renderAudit('auditBefore', rows);
+}
+
+function renderTable(containerId, cols, rows, headerMap, cellClassFn){
+  const el = $(containerId);
+  if(!el) return;
+  if(!rows.length){ el.innerHTML = '<p style="color:#93a6b8;padding:10px">No data.</p>'; return; }
+  let h = '<table><thead><tr>';
+  for(const c of cols) h += '<th>' + ((headerMap && headerMap[c]) || c) + '</th>';
+  h += '</tr></thead><tbody>';
+  for(const r of rows){
+    h += '<tr>';
+    for(const c of cols){
+      let v = r[c];
+      if(v instanceof Date) v = dateKey(v);
+      if(v===null || v===undefined || v==='') v = '—';
+      else if(typeof v === 'number') v = (Math.abs(v) >= 1000) ? v.toLocaleString() : (Math.round(v*100)/100);
+      const cls = cellClassFn ? cellClassFn(c, r) : '';
+      h += '<td' + (cls ? ' class="'+cls+'"' : '') + '>' + v + '</td>';
+    }
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  el.innerHTML = h;
+}
+
+function renderAudit(containerId, rows){
+  const el = $(containerId);
+  if(!rows.length){ el.innerHTML = '<p style="color:#93a6b8">No data loaded.</p>'; return; }
+
+  let h = '<div class="tbl-wrap"><table><thead><tr>' +
+    '<th>Column</th><th>Non-null</th><th>Null</th><th>Null %</th>' +
+    '<th>Min</th><th>Q1</th><th>Median</th><th>Q3</th><th>Max</th><th>Mean</th><th>SD</th>' +
+    '</tr></thead><tbody>';
+
+  for(const p of POLLUTANTS){
+    const vals = rows.map(r=>r[p]).filter(v => v!==null && v!==undefined && isFinite(v));
+    vals.sort((a,b)=>a-b);
+    const nulls = rows.length - vals.length;
+    h += '<tr><td><b>' + LABEL[p] + '</b></td>' +
+         '<td>' + vals.length.toLocaleString() + '</td>' +
+         '<td>' + nulls.toLocaleString() + '</td>' +
+         '<td>' + (rows.length ? (nulls/rows.length*100).toFixed(2) : 0) + '%</td>' +
+         '<td>' + fmt(vals[0]) + '</td>' +
+         '<td>' + fmt(quantile(vals,0.25)) + '</td>' +
+         '<td>' + fmt(quantile(vals,0.5)) + '</td>' +
+         '<td>' + fmt(quantile(vals,0.75)) + '</td>' +
+         '<td>' + fmt(vals[vals.length-1]) + '</td>' +
+         '<td>' + fmt(mean(vals)) + '</td>' +
+         '<td>' + fmt(std(vals)) + '</td></tr>';
+  }
+  h += '</tbody></table></div>';
+
+  // duplicates
+  const seen = new Set(); let dups = 0;
+  for(const r of rows){
+    const k = r.station + '|' + dateKey(r.date);
+    if(seen.has(k)) dups++; else seen.add(k);
+  }
+  const badDates = rows.filter(r => !(r.date instanceof Date) || isNaN(r.date)).length;
+
+  h += '<div class="kpis" style="margin-top:14px">' +
+    '<div class="kpi"><div class="v">' + dups.toLocaleString() + '</div><div class="l">Duplicate (station+date)</div></div>' +
+    '<div class="kpi"><div class="v">' + badDates + '</div><div class="l">Invalid dates</div></div>' +
+    '<div class="kpi"><div class="v">' + [...new Set(rows.map(r=>r.station))].length + '</div><div class="l">Distinct stations</div></div>' +
+    '</div>';
+
+  el.innerHTML = h;
+}
+
+/* ==========================================================================
+   TAB 2 : CLEANING PIPELINE
+   ========================================================================== */
+function cleanPipeline(){
+  clearLog('log-pre');
+  if(!state.raw.length){ logTo('log-pre','✗ No data loaded. Go to Tab 1 first.','err'); return; }
+
+  const opts = {
+    missing: $('optMissing').value,
+    outlier: $('optOutlier').value,
+    dedupe:  $('optDedupe').value === 'yes'
+  };
+  logTo('log-pre', '▶ Starting cleaning pipeline — missing="'+opts.missing+'", outlier="'+opts.outlier+'", dedupe='+opts.dedupe, 'info');
+
+  let data = state.raw.map(r => Object.assign({}, r));
+  const n0 = data.length;
+
+  /* --- 2.2.1 date & station integrity --- */
+  data = data.filter(r => r.date instanceof Date && !isNaN(r.date));
+  logTo('log-pre', '① Date coercion: dropped ' + (n0 - data.length) + ' rows with unparseable dates.', 'ok');
+  const n1 = data.length;
+  data = data.filter(r => r.station && String(r.station).trim() !== '');
+  logTo('log-pre', '② Station integrity: dropped ' + (n1 - data.length) + ' rows without a station label.', 'ok');
+
+  /* --- 2.2.2 numeric coercion --- */
+  let coerced = 0;
+  for(const r of data){
+    for(const p of POLLUTANTS){
+      if(r[p] !== null && r[p] !== undefined){
+        const v = toNum(r[p]);
+        if(v === null){ r[p] = null; coerced++; }
+        else if(v < 0){ r[p] = null; coerced++; }   // negative concentrations impossible
+        else r[p] = v;
+      }
+    }
+  }
+  logTo('log-pre', '③ Numeric coercion: ' + coerced + ' non-numeric / negative values set to null.', 'ok');
+
+  /* --- 2.2.3 duplicates --- */
+  if(opts.dedupe){
+    const seen = new Set(); const out = [];
+    for(const r of data){
+      const k = r.station + '|' + dateKey(r.date);
+      if(seen.has(k)) continue;
+      seen.add(k);
+      out.push(r);
+    }
+    logTo('log-pre', '④ Deduplication: removed ' + (data.length - out.length) + ' duplicate (station+date) records.', 'ok');
+    data = out;
+  }
+
+  /* --- sort by station then date --- */
+  data.sort((a,b) => a.station.localeCompare(b.station) || (a.date - b.date));
+  logTo('log-pre', '⑤ Sorted by station → date ascending.', 'ok');
+
+  /* --- 2.2.4 missing value handling --- */
+  const beforeMissing = countMissing(data);
+  logTo('log-pre', '⑥ Missing values before imputation: ' + beforeMissing.toLocaleString() +
+        ' (' + (beforeMissing/(data.length*POLLUTANTS.length)*100).toFixed(2) + '%).', 'info');
+
+  if(opts.missing === 'drop'){
+    const keep = data.filter(r => POLLUTANTS.every(p => r[p] !== null && isFinite(r[p])));
+    logTo('log-pre', '   → Dropped ' + (data.length - keep.length) + ' rows with any missing pollutant.', 'ok');
+    data = keep;
+  } else if(opts.missing === 'ffill'){
+    forwardBackwardFill(data, 3);
+    logTo('log-pre', '   → Forward/backward fill applied, max run = 3 days per station.', 'ok');
+  } else if(opts.missing === 'linear'){
+    linearInterpolate(data);
+    logTo('log-pre', '   → Linear interpolation by calendar-day distance within each station.', 'ok');
+  } else if(opts.missing === 'seasonal'){
+    seasonalMeanFill(data);
+    logTo('log-pre', '   → Seasonal (station × month) mean imputation applied.', 'ok');
+  } else if(opts.missing === 'knn'){
+    const filled = knnImpute(data, 11);
+    logTo('log-pre', '   → KNN imputation (k=11, z-scored Euclidean on available pollutants) filled ' +
+          filled.toLocaleString() + ' cells.', 'ok');
+  }
+
+  /* --- residual fallback --- */
+  const resid = residualFill(data);
+  if(resid) logTo('log-pre', '⑦ Residual fallback (station-month mean → station mean → global mean): ' +
+                    resid.toLocaleString() + ' cells filled.', 'warn');
+
+  /* --- 2.2.5 outlier treatment --- */
+  if(opts.outlier === 'iqr'){
+    const capped = iqrCap(data);
+    logTo('log-pre', '⑧ IQR Winsorization (1.5×IQR, station-wise): ' + capped.toLocaleString() +
+          ' cells clipped to physically plausible bounds.', 'ok');
+  } else if(opts.outlier === 'zscore'){
+    const capped = zCap(data, 3);
+    logTo('log-pre', '⑧ Z-score capping (|z|>3): ' + capped.toLocaleString() + ' cells clipped.', 'ok');
+  } else {
+    logTo('log-pre', '⑧ Outlier treatment skipped (option = none).', 'warn');
+  }
+
+  /* --- 2.2.6 feature engineering --- */
+  for(const r of data){
+    r.year       = r.date.getFullYear();
+    r.month      = r.date.getMonth()+1;
+    r.dayOfWeek  = r.date.getDay();
+    r.season     = seasonOf(r.month);
+    r.pmRatio    = (r.pm10 && r.pm10 > 0 && r.pm25 !== null) ? r.pm25 / r.pm10 : null;
+  }
+  logTo('log-pre', '⑨ Feature engineering: year, month, dayOfWeek, season, PM2.5/PM10 ratio.', 'ok');
+
+  state.clean = data;
+  const afterMissing = countMissing(data);
+  logTo('log-pre', '✔ Pipeline complete. ' + data.length.toLocaleString() + ' clean records, ' +
+        afterMissing + ' remaining nulls.', afterMissing === 0 ? 'ok' : 'warn');
+
+  renderAudit('auditAfter', data);
+  populateVizSelectors();
+  buildEdA();
+}
+
+function countMissing(rows){
+  let c = 0;
+  for(const r of rows) for(const p of POLLUTANTS) if(r[p]===null || r[p]===undefined || !isFinite(r[p])) c++;
+  return c;
+}
+
+/* ---- Imputation methods ---- */
+function forwardBackwardFill(data, limit){
+  for(const st in groupBy(data, r=>r.station)){
+    const rows = data.filter(r=>r.station===st);
+    for(const p of POLLUTANTS){
+      let last = null, run = 0;
+      for(const r of rows){
+        if(r[p] !== null && isFinite(r[p])){ last = r[p]; run = 0; }
+        else if(last !== null && run < limit){ r[p] = last; run++; }
+        else { run++; }
+      }
+      // backward pass
+      last = null; run = 0;
+      for(let i=rows.length-1;i>=0;i--){
+        const r = rows[i];
+        if(r[p] !== null && isFinite(r[p])){ last = r[p]; run = 0; }
+        else if(last !== null && run < limit){ r[p] = last; run++; }
+        else { run++; }
+      }
+    }
+  }
+}
+
+function linearInterpolate(data){
+  const DAY = 86400000;
+  for(const st in groupBy(data, r=>r.station)){
+    const rows = data.filter(r=>r.station===st);
+    for(const p of POLLUTANTS){
+      let i = 0;
+      while(i < rows.length){
+        if(rows[i][p] !== null && isFinite(rows[i][p])){ i++; continue; }
+        // find run of nulls
+        let j = i;
+        while(j < rows.length && (rows[j][p] === null || !isFinite(rows[j][p]))) j++;
+        const prev = i > 0 ? rows[i-1] : null;
+        const next = j < rows.length ? rows[j] : null;
+        if(prev && next){
+          const t0 = prev.date.getTime(), t1 = next.date.getTime();
+          const v0 = prev[p], v1 = next[p];
+          for(let k=i;k<j;k++){
+            const t = rows[k].date.getTime();
+            const w = (t1 - t0) === 0 ? 0 : (t - t0)/(t1 - t0);
+            rows[k][p] = v0 + w*(v1 - v0);
+          }
+        } else if(prev){
+          for(let k=i;k<j;k++) rows[k][p] = prev[p];
+        } else if(next){
+          for(let k=i;k<j;k++) rows[k][p] = next[p];
+        }
+        i = j;
+      }
+    }
+  }
+}
+
+function seasonalMeanFill(data){
+  const groups = groupBy(data, r => r.station + '#' + r.date.getMonth());
+  const means = {};
+  for(const k in groups){
+    const rows = groups[k];
+    for(const p of POLLUTANTS){
+      const vals = rows.map(r=>r[p]).filter(v => v!==null && isFinite(v));
+      means[k + '#' + p] = vals.length ? mean(vals) : null;
+    }
+  }
+  for(const r of data){
+    const k = r.station + '#' + r.date.getMonth();
+    for(const p of POLLUTANTS){
+      if(r[p] === null || !isFinite(r[p])){
+        const m = means[k + '#' + p];
+        if(m !== null) r[p] = m;
+      }
+    }
+  }
+}
+
+function knnImpute(data, k){
+  let totalFilled = 0;
+  const byStation = groupBy(data, r => r.station);
+
+  for(const st in byStation){
+    const rows = byStation[st];
+
+    // complete rows = rows with all pollutants present
+    let complete = rows.filter(r => POLLUTANTS.every(p => r[p] !== null && isFinite(r[p])));
+    if(complete.length < k) continue;
+    if(complete.length > 700){
+      complete = complete.slice().sort(()=>Math.random()-0.5).slice(0,700);
+    }
+
+    // z-score stats from complete rows
+    const stats = {};
+    for(const p of POLLUTANTS){
+      const vals = complete.map(r => r[p]);
+      const m = mean(vals);
+      const s = std(vals) || 1;
+      stats[p] = { m: m, s: s };
+    }
+
+    // build z-scored matrix
+    const mat = complete.map(r => POLLUTANTS.map(p => (r[p] - stats[p].m) / stats[p].s));
+
+    const incomplete = rows.filter(r => POLLUTANTS.some(p => r[p] === null || !isFinite(r[p])));
+
+    for(const r of incomplete){
+      const avail = POLLUTANTS.filter(p => r[p] !== null && isFinite(r[p]));
+      if(!avail.length) continue;
+      const q = avail.map(p => (r[p] - stats[p].m) / stats[p].s);
+      const availIdx = avail.map(p => POLLUTANTS.indexOf(p));
+
+      const dists = new Array(mat.length);
+      for(let i=0;i<mat.length;i++){
+        let d = 0;
+        const row = mat[i];
+        for(let j=0;j<availIdx.length;j++){
+          const diff = row[availIdx[j]] - q[j];
+          d += diff*diff;
+        }
+        dists[i] = Math.sqrt(d);
+      }
+
+      const pairs = dists.map((d,i)=>[d,i]).sort((a,b)=>a[0]-b[0]).slice(0,k);
+      let wsum = 0;
+      for(const pr of pairs) wsum += 1/(pr[0] + 1e-6);
+
+      for(const p of POLLUTANTS){
+        if(r[p] === null || !isFinite(r[p])){
+          let v = 0;
+          for(const pr of pairs){
+            const w = 1/(pr[0] + 1e-6);
+            v += w * complete[pr[1]][p];
+          }
+          r[p] = v / wsum;
+          totalFilled++;
+        }
+      }
+    }
+  }
+  return totalFilled;
+}
+
+function residualFill(data){
+  let filled = 0;
+  // station-month mean
+  const smGroups = groupBy(data, r => r.station + '#' + r.date.getMonth());
+  const smMeans = {};
+  for(const k in smGroups){
+    for(const p of POLLUTANTS){
+      const vals = smGroups[k].map(r=>r[p]).filter(v=>v!==null && isFinite(v));
+      smMeans[k+'#'+p] = vals.length ? mean(vals) : null;
+    }
+  }
+  for(const r of data){
+    const k = r.station + '#' + r.date.getMonth();
+    for(const p of POLLUTANTS){
+      if(r[p]===null || !isFinite(r[p])){
+        const m = smMeans[k+'#'+p];
+        if(m !== null){ r[p] = m; filled++; }
+      }
+    }
+  }
+  // station mean
+  const stGroups = groupBy(data, r => r.station);
+  const stMeans = {};
+  for(const k in stGroups){
+    for(const p of POLLUTANTS){
+      const vals = stGroups[k].map(r=>r[p]).filter(v=>v!==null && isFinite(v));
+      stMeans[k+'#'+p] = vals.length ? mean(vals) : null;
+    }
+  }
+  for(const r of data){
+    for(const p of POLLUTANTS){
+      if(r[p]===null || !isFinite(r[p])){
+        const m = stMeans[r.station+'#'+p];
+        if(m !== null){ r[p] = m; filled++; }
+      }
+    }
+  }
+  // global mean
+  for(const p of POLLUTANTS){
+    const vals = data.map(r=>r[p]).filter(v=>v!==null && isFinite(v));
+    const g = vals.length ? mean(vals) : 0;
+    for(const r of data){
+      if(r[p]===null || !isFinite(r[p])){ r[p] = g; filled++; }
+    }
+  }
+  return filled;
+}
+
+function iqrCap(data){
+  let capped = 0;
+  const byStation = groupBy(data, r => r.station);
+  for(const st in byStation){
+    const rows = byStation[st];
+    for(const p of POLLUTANTS){
+      const vals = rows.map(r=>r[p]).filter(v=>v!==null && isFinite(v)).sort((a,b)=>a-b);
+      if(vals.length < 8) continue;
+      const q1 = quantile(vals, 0.25), q3 = quantile(vals, 0.75);
+      const iqr = q3 - q1;
+      const lo = Math.max(0, q1 - 1.5*iqr);
+      const hi = q3 + 1.5*iqr;
+      for(const r of rows){
+        if(r[p] === null || !isFinite(r[p])) continue;
+        if(r[p] < lo){ r[p] = lo; capped++; }
+        else if(r[p] > hi){ r[p] = hi; capped++; }
+      }
+    }
+  }
+  return capped;
+}
+
+function zCap(data, z){
+  let capped = 0;
+  const byStation = groupBy(data, r => r.station);
+  for(const st in byStation){
+    const rows = byStation[st];
+    for(const p of POLLUTANTS){
+      const vals = rows.map(r=>r[p]).filter(v=>v!==null && isFinite(v));
+      if(vals.length < 8) continue;
+      const m = mean(vals), s = std(vals);
+      if(!s) continue;
+      const lo = Math.max(0, m - z*s), hi = m + z*s;
+      for(const r of rows){
+        if(r[p] === null || !isFinite(r[p])) continue;
+        if(r[p] < lo){ r[p] = lo; capped++; }
+        else if(r[p] > hi){ r[p] = hi; capped++; }
+      }
+    }
+  }
+  return capped;
+}
+
+/* ==========================================================================
+   TAB 3 : EDA
+   ========================================================================== */
+function buildEdA(){
+  const data = state.clean;
+  if(!data.length) return;
+
+  /* ---- descriptive statistics ---- */
+  let h = '<div class="tbl-wrap"><table><thead><tr><th>Pollutant</th><th>Unit</th><th>N</th>' +
+          '<th>Mean</th><th>SD</th><th>Min</th><th>Q1</th><th>Median</th><th>Q3</th><th>Max</th>' +
+          '<th>Skew</th><th>Kurtosis</th></tr></thead><tbody>';
+  for(const p of POLLUTANTS){
+    const v = data.map(r=>r[p]).filter(x=>x!==null && isFinite(x)).sort((a,b)=>a-b);
+    const m = mean(v), s = std(v);
+    let skew = 0, kurt = 0;
+    if(s > 0 && v.length > 3){
+      let s3 = 0, s4 = 0;
+      for(const x of v){ const d = (x-m)/s; s3 += d*d*d; s4 += d*d*d*d; }
+      skew = s3/v.length;
+      kurt = s4/v.length - 3;
+    }
+    h += '<tr><td><b>'+LABEL[p]+'</b></td><td>'+UNIT[p]+'</td><td>'+v.length+'</td>' +
+         '<td>'+fmt(m)+'</td><td>'+fmt(s)+'</td><td>'+fmt(v[0])+'</td>' +
+         '<td>'+fmt(quantile(v,0.25))+'</td><td>'+fmt(quantile(v,0.5))+'</td>' +
+         '<td>'+fmt(quantile(v,0.75))+'</td><td>'+fmt(v[v.length-1])+'</td>' +
+         '<td>'+fmt(skew)+'</td><td>'+fmt(kurt)+'</td></tr>';
+  }
+  h += '</tbody></table></div>';
+  $('edaStats').innerHTML = h;
+
+  /* ---- correlation ---- */
+  const matrix = [];
+  for(const a of POLLUTANTS){
+    const row = [];
+    for(const b of POLLUTANTS){
+      const x = [], y = [];
+      for(const r of data){
+        if(r[a]!==null && r[b]!==null && isFinite(r[a]) && isFinite(r[b])){ x.push(r[a]); y.push(r[b]); }
+      }
+      row.push(pearson(x,y));
+    }
+    matrix.push(row);
+  }
+
+  let ch = '<div class="tbl-wrap"><table><thead><tr><th>—</th>';
+  for(const p of POLLUTANTS) ch += '<th>'+LABEL[p]+'</th>';
+  ch += '</tr></thead><tbody>';
+  for(let i=0;i<POLLUTANTS.length;i++){
+    ch += '<tr><td><b>'+LABEL[POLLUTANTS[i]]+'</b></td>';
+    for(let j=0;j<POLLUTANTS.length;j++){
+      const v = matrix[i][j];
+      const col = isNaN(v) ? '#93a6b8' : (v > 0.5 ? '#4ade80' : (v < -0.3 ? '#f87171' : '#e6edf3'));
+      ch += '<td style="color:'+col+'">'+fmt(v,3)+'</td>';
+    }
+    ch += '</tr>';
+  }
+  ch += '</tbody></table></div>';
+  $('edaCorrTbl').innerHTML = ch;
+
+  Plotly.newPlot('edaCorrHeat', [{
+    z: matrix,
+    x: POLLUTANTS.map(p=>LABEL[p]),
+    y: POLLUTANTS.map(p=>LABEL[p]),
+    type: 'heatmap',
+    colorscale: 'RdBu',
+    zmid: 0, zmin: -1, zmax: 1,
+    text: matrix.map(row => row.map(v => fmt(v,2))),
+    texttemplate: '%{text}',
+    textfont: { size: 11, color: '#0b1a24' },
+    colorbar: { tickfont: { color: '#93a6b8' } }
+  }], plotLayout('Pollutant Correlation Matrix'));
+
+  /* ---- distributions ---- */
+  const grid = $('edaDists');
+  grid.innerHTML = '';
+  for(const p of POLLUTANTS){
+    const div = document.createElement('div');
+    div.className = 'chart';
+    div.id = 'dist-' + p;
+    div.style.height = '260px';
+    grid.appendChild(div);
+    const vals = data.map(r=>r[p]).filter(v=>v!==null && isFinite(v));
+    Plotly.newPlot(div.id, [{
+      x: vals, type: 'histogram', nbinsx: 45,
+      marker: { color: '#38bdf8', line: { color: '#0b1a24', width: 0.4 } },
+      opacity: 0.9, name: LABEL[p]
+    }], Object.assign(plotLayout(LABEL[p] + ' distribution'), {
+      height: 260, margin: { l: 45, r: 12, t: 34, b: 38 },
+      showlegend: false,
+      xaxis: { title: { text: UNIT[p], font:{size:10, color:'#93a6b8'} }, color:'#93a6b8', gridcolor:'#22303f' },
+      yaxis: { title: { text: 'Count', font:{size:10, color:'#93a6b8'} }, color:'#93a6b8', gridcolor:'#22303f' }
+    }));
+  }
+
+  /* ---- station profile heatmap ---- */
+  const stations = [...new Set(data.map(r=>r.station))].sort();
+  const zRaw = stations.map(st=>{
+    const rows = data.filter(r=>r.station===st);
+    return POLLUTANTS.map(p=>{
+      const vals = rows.map(r=>r[p]).filter(v=>v!==null && isFinite(v));
+      return vals.length ? mean(vals) : 0;
+    });
+  });
+  // normalise per pollutant column
+  const zNorm = zRaw.map(row => row.slice());
+  for(let j=0;j<POLLUTANTS.length;j++){
+    let mn = Infinity, mx = -Infinity;
+    for(let i=0;i<stations.length;i++){ mn = Math.min(mn, zRaw[i][j]); mx = Math.max(mx, zRaw[i][j]); }
+    for(let i=0;i<stations.length;i++){
+      zNorm[i][j] = (mx - mn) === 0 ? 0 : (zRaw[i][j] - mn)/(mx - mn);
+    }
+  }
+
+  Plotly.newPlot('edaStationHeat', [{
+    z: zNorm,
+    x: POLLUTANTS.map(p=>LABEL[p]),
+    y: stations,
+    type: 'heatmap',
+    colorscale: 'YlOrRd',
+    zmin: 0, zmax: 1,
+    text: zRaw.map(row => row.map(v => fmt(v,1))),
+    texttemplate: '%{text}',
+    textfont: { size: 11 },
+    colorbar: { tickfont: { color: '#93a6b8' }, title: { text: 'norm.', font: { color:'#93a6b8', size:10 } } }
+  }], plotLayout('Station × Pollutant Profile (labels = actual means)'));
+}
+
+/* ==========================================================================
+   TAB 4 : VISUALISATION
+   ========================================================================== */
+function populateVizSelectors(){
+  const opts = POLLUTANTS.map(p => '<option value="'+p+'">'+LABEL[p]+'</option>').join('');
+  if($('vizPollutant')) $('vizPollutant').innerHTML = opts;
+  if($('vizSeasonPoll')) $('vizSeasonPoll').innerHTML = opts;
+  buildViz();
+}
+
+function plotLayout(title){
+  return {
+    title: { text: title, font: { size: 13, color: '#bcd3e4' }, x: 0.01, xanchor: 'left' },
+    paper_bgcolor: '#1b2b3d',
+    plot_bgcolor: '#1b2b3d',
+    font: { color: '#e6edf3', size: 11 },
+    margin: { l: 55, r: 20, t: 40, b: 50 },
+    legend: { font: { size: 10 }, bgcolor: 'rgba(0,0,0,0)' },
+    xaxis: { gridcolor: '#22303f', zerolinecolor: '#22303f', color: '#93a6b8' },
+    yaxis: { gridcolor: '#22303f', zerolinecolor: '#22303f', color: '#93a6b8' }
+  };
+}
+
+function buildViz(){
+  const data = state.clean;
+  if(!data.length) return;
+
+  const stations = [...new Set(data.map(r=>r.station))].sort();
+  const palette = ['#38bdf8','#f472b6','#4ade80','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f87171','#34d399','#e879f9'];
+
+  /* ---- 4.1 monthly trend ---- */
+  function drawTrend(){
+    const p = $('vizPollutant').value || 'pm25';
+    const traces = [];
+    stations.forEach((st, i)=>{
+      const rows = data.filter(r=>r.station===st);
+      const buckets = {};
+      for(const r of rows){
+        if(r[p]===null || !isFinite(r[p])) continue;
+        const k = monthKey(r.date);
+        (buckets[k] = buckets[k] || []).push(r[p]);
+      }
+      const keys = Object.keys(buckets).sort();
+      traces.push({
+        x: keys,
+        y: keys.map(k => mean(buckets[k])),
+        type: 'scatter', mode: 'lines+markers',
+        name: st,
+        line: { color: palette[i % palette.length], width: 2 },
+        marker: { size: 4 }
+      });
+    });
+    const lay = plotLayout('Monthly mean ' + LABEL[p] + ' by station — Gujarat');
+    lay.xaxis.title = { text: 'Month', font:{ size:11, color:'#93a6b8' } };
+    lay.yaxis.title = { text: LABEL[p] + ' (' + UNIT[p] + ')', font:{ size:11, color:'#93a6b8' } };
+    Plotly.newPlot('vizTrend', traces, lay, { responsive: true });
+  }
+
+  /* ---- 4.2 seasonal box ---- */
+  function drawSeason(){
+    const p = $('vizSeasonPoll').value || 'pm25';
+    const seasons = ['Winter','Summer','Monsoon','Post-Monsoon'];
+    const traces = seasons.map(s => {
+      const vals = data.filter(r => r.season === s && r[p]!==null && isFinite(r[p])).map(r=>r[p]);
+      return { y: vals, type: 'box', name: s, boxmean: 'sd',
+               marker: { color: '#38bdf8' }, line: { color: '#7dd3fc' } };
+    });
+    const lay = plotLayout(LABEL[p] + ' by season — Gujarat');
+    lay.yaxis.title = { text: LABEL[p] + ' (' + UNIT[p] + ')', font:{ size:11, color:'#93a6b8' } };
+    lay.showlegend = false;
+    Plotly.newPlot('vizSeason', traces, lay, { responsive: true });
+  }
+
+  /* ---- 4.3 station ranking ---- */
+  function drawRank(){
+    const p = $('vizPollutant').value || 'pm25';
+    const names = [], vals = [];
+    for(const st of stations){
+      const rows = data.filter(r=>r.station===st);
+      const v = rows.map(r=>r[p]).filter(x=>x!==null && isFinite(x));
+      names.push(st); vals.push(v.length ? mean(v) : 0);
+    }
+    const order = vals.map((v,i)=>[v,i]).sort((a,b)=>a[0]-b[0]);
+    Plotly.newPlot('vizRank', [{
+      x: order.map(o=>vals[o[1]]),
+      y: order.map(o=>names[o[1]]),
+      type: 'bar', orientation: 'h',
+      marker: { color: order.map(o=>vals[o[1]]), colorscale: 'YlOrRd' },
+      text: order.map(o=>fmt(vals[o[1]],1)),
+      textposition: 'outside',
+      textfont: { color: '#e6edf3', size: 11 }
+    }], Object.assign(plotLayout('Mean ' + LABEL[p] + ' by station (ranked)'), {
+      xaxis: { title: { text: LABEL[p] + ' (' + UNIT[p] + ')', font:{size:11,color:'#93a6b8'} }, gridcolor:'#22303f', color:'#93a6b8' },
+      yaxis: { gridcolor:'#22303f', color:'#93a6b8' },
+      margin: { l: 110, r: 60, t: 40, b: 50 }
+    }), { responsive: true });
+  }
+
+  drawTrend(); drawSeason(); drawRank();
+
+  $('vizPollutant').onchange = function(){ drawTrend(); drawRank(); };
+  $('vizSeasonPoll').onchange = drawSeason;
+
+  if(state.aqiDone) drawAqiCharts();
+}
+
+/* ==========================================================================
+   TAB 5 : AQI MATHEMATICS
+   ========================================================================== */
+const BREAKPOINTS = {
+  pm25: [[0,30,0,50],[30,60,50,100],[60,90,100,200],[90,120,200,300],[120,250,300,400],[250,500,400,500]],
+  pm10: [[0,50,0,50],[50,100,50,100],[100,250,100,200],[250,350,200,300],[350,430,300,400],[430,600,400,500]],
+  no2:  [[0,40,0,50],[40,80,50,100],[80,180,100,200],[180,280,200,300],[280,400,300,400],[400,600,400,500]],
+  so2:  [[0,40,0,50],[40,80,50,100],[80,380,100,200],[380,800,200,300],[800,1600,300,400],[1600,2000,400,500]],
+  co:   [[0,1,0,50],[1,2,50,100],[2,10,100,200],[10,17,200,300],[17,34,300,400],[34,50,400,500]],
+  o3:   [[0,50,0,50],[50,100,50,100],[100,168,100,200],[168,208,200,300],[208,748,300,400],[748,1000,400,500]],
+  nh3:  [[0,200,0,50],[200,400,50,100],[400,800,100,200],[800,1200,200,300],[1200,1800,300,400],[1800,2400,400,500]]
+};
+
+const AQI_CATS = [
+  { name:'Good',        lo:0,   hi:50,  cls:'p-good'  },
+  { name:'Satisfactory',lo:51,  hi:100, cls:'p-sat'   },
+  { name:'Moderate',    lo:101, hi:200, cls:'p-mod'   },
+  { name:'Poor',        lo:201, hi:300, cls:'p-poor'  },
+  { name:'Very Poor',   lo:301, hi:400, cls:'p-vpoor' },
+  { name:'Severe',      lo:401, hi:500, cls:'p-sev'   }
+];
+
+function subIndex(c, p){
+  if(c === null || c === undefined || !isFinite(c)) return null;
+  if(c < 0) c = 0;
+  const bp = BREAKPOINTS[p];
+  if(!bp) return null;
+  for(let i=0;i<bp.length;i++){
+    const bl = bp[i][0], bh = bp[i][1], il = bp[i][2], ih = bp[i][3];
+    if(c >= bl && c <= bh){
+      return Math.round(((ih - il)/(bh - bl)) * (c - bl) + il);
+    }
+  }
+  return 500;
+}
+
+function aqiCategory(a){
+  if(a === null || a === undefined || !isFinite(a)) return null;
+  for(const c of AQI_CATS) if(a >= c.lo && a <= c.hi) return c.name;
+  return a > 500 ? 'Severe' : null;
+}
+
+function aqiCategoryClass(name){
+  const c = AQI_CATS.find(x => x.name === name);
+  return c ? c.cls : '';
+}
+
+function computeRowAqi(row, opts){
+  const subs = {};
+  for(const p of POLLUTANTS){
+    const v = row[p];
+    if(v === null || v === undefined || !isFinite(v)) continue;
+    const si = subIndex(v, p);
+    if(si !== null) subs[p] = si;
+  }
+  const keys = Object.keys(subs);
+  const hasPM = ('pm25' in subs) || ('pm10' in subs);
+
+  if(opts.relaxed){
+    if(!keys.length) return { aqi: null, primary: null, subs: subs };
+  } else {
+    if(keys.length < 3 || !hasPM) return { aqi: null, primary: null, subs: subs };
+  }
+
+  let primary = null, max = -Infinity;
+  for(const k of keys){ if(subs[k] > max){ max = subs[k]; primary = k; } }
+  return { aqi: max, primary: primary, subs: subs };
+}
+
+/* ---- render breakpoint table ---- */
+function renderBreakpoints(){
+  let h = '<table><thead><tr><th>AQI Category</th><th>AQI Range</th>';
+  for(const p of POLLUTANTS) h += '<th>' + LABEL[p] + ' (' + UNIT[p] + ')</th>';
+  h += '</tr></thead><tbody>';
+
+  for(let band=0; band<6; band++){
+    h += '<tr><td><span class="pill '+AQI_CATS[band].cls+'">'+AQI_CATS[band].name+'</span></td>' +
+         '<td>'+AQI_CATS[band].lo+' – '+AQI_CATS[band].hi+'</td>';
+    for(const p of POLLUTANTS){
+      const bp = BREAKPOINTS[p][band];
+      h += '<td>' + bp[0] + ' – ' + bp[1] + '</td>';
+    }
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+  $('bpTable').innerHTML = h;
+}
+
+/* ---- main AQI run ---- */
+function runAqi(){
+  clearLog('log-aqi');
+  if(!state.clean.length){
+    logTo('log-aqi', '✗ No cleaned data. Run the preprocessing pipeline (Tab 2) first.', 'err');
+    return;
+  }
+  const data = state.clean;
+  const coOpt = $('optCO').value;
+  const relaxed = $('optRelax').value === 'relaxed';
+
+  logTo('log-aqi', '▶ Computing CPCB sub-indices and AQI…', 'info');
+
+  /* --- CO unit handling --- */
+  let coScale = 1;
+  if(coOpt === 'ug'){ coScale = 0.001; }
+  else if(coOpt === 'auto'){
+    const vals = data.map(r => r.co).filter(v => v !== null && isFinite(v)).sort((a,b)=>a-b);
+    const med = vals.length ? quantile(vals, 0.5) : 0;
+    if(med > 20){ coScale = 0.001; logTo('log-aqi', '   Auto-detect: median CO = ' + fmt(med) +
+      ' → dataset appears to be in µg/m³. Converting to mg/m³ (÷1000).', 'warn'); }
+    else { logTo('log-aqi', '   Auto-detect: median CO = ' + fmt(med) + ' → assuming mg/m³ (CPCB standard).', 'ok'); }
+  }
+  if(coScale !== 1){
+    for(const r of data) if(r.co !== null && isFinite(r.co)) r.co = r.co * coScale;
+  }
+
+  /* --- per-row AQI --- */
+  let valid = 0, invalid = 0;
+  const primaryCount = {};
+  for(const r of data){
+    const res = computeRowAqi(r, { relaxed: relaxed });
+    r.aqi = res.aqi;
+    r.primaryPollutant = res.primary;
+    r.aqiCategory = aqiCategory(res.aqi);
+    for(const p of POLLUTANTS){
+      r['si_' + p] = res.subs[p] !== undefined ? res.subs[p] : null;
+    }
+    if(res.aqi === null){ invalid++; }
+    else {
+      valid++;
+      primaryCount[res.primary] = (primaryCount[res.primary] || 0) + 1;
+    }
+  }
+  logTo('log-aqi', '① Sub-index calculation complete. Valid AQI rows: ' + valid.toLocaleString() +
+        ' / ' + data.length.toLocaleString() + ' (' + (valid/data.length*100).toFixed(1) + '%).', 'ok');
+  if(invalid) logTo('log-aqi', '   ' + invalid.toLocaleString() +
+        ' rows failed the CPCB minimum-pollutant rule (need ≥3 pollutants incl. PM2.5 or PM10).', 'warn');
+
+  /* --- advanced maths --- */
+  computeAdvancedMaths(data);
+
+  /* --- validation --- */
+  validateAqi(data);
+
+  /* --- visual validation --- */
+  drawAqiCharts();
+  state.aqiDone = true;
+  logTo('log-aqi', '✔ AQI pipeline finished. Scroll down for validation + advanced metrics.', 'ok');
+}
+
+/* ---- weighted composite + smoothing + standardisation ---- */
+const HEALTH_WEIGHTS = { pm25:1.0, pm10:0.7, no2:0.5, so2:0.4, co:0.3, o3:0.6, nh3:0.2 };
+
+function computeAdvancedMaths(data){
+  /* 1. weighted composite index */
+  for(const r of data){
+    let wsum = 0, wtotal = 0;
+    for(const p of POLLUTANTS){
+      const si = r['si_' + p];
+      if(si === null || si === undefined) continue;
+      wsum += si * HEALTH_WEIGHTS[p];
+      wtotal += HEALTH_WEIGHTS[p];
+    }
+    r.weightedAqi = wtotal > 0 ? Math.round(wsum / wtotal) : null;
+  }
+
+  /* 2. rolling 7-day mean + EWMA per station */
+  const byStation = groupBy(data, r => r.station);
+  const alpha = 2/(7+1);
+  for(const st in byStation){
+    const rows = byStation[st].slice().sort((a,b)=> a.date - b.date);
+    const buf = [];
+    let ewma = null;
+    for(const r of rows){
+      if(r.aqi !== null && isFinite(r.aqi)){
+        buf.push(r.aqi);
+        if(buf.length > 7) buf.shift();
+        r.aqi7day = buf.length >= 3 ? Math.round(mean(buf)) : null;
+        ewma = (ewma === null) ? r.aqi : (alpha * r.aqi + (1 - alpha) * ewma);
+        r.aqiEwma = Math.round(ewma);
+      } else {
+        r.aqi7day = null; r.aqiEwma = ewma === null ? null : Math.round(ewma);
+      }
+    }
+  }
+
+  /* 3. z-score + percentile per station */
+  for(const st in byStation){
+    const rows = byStation[st];
+    const vals = rows.map(r=>r.aqi).filter(v=>v!==null && isFinite(v));
+    if(!vals.length) continue;
+    const m = mean(vals), s = std(vals);
+    const sorted = vals.slice().sort((a,b)=>a-b);
+    for(const r of rows){
+      if(r.aqi === null || !isFinite(r.aqi)){ r.aqiZ = null; r.aqiPct = null; continue; }
+      r.aqiZ = s > 0 ? (r.aqi - m)/s : 0;
+      // percentile rank
+      let lo = 0, hi = sorted.length;
+      while(lo < hi){ const mid = (lo+hi)>>1; if(sorted[mid] < r.aqi) lo = mid+1; else hi = mid; }
+      r.aqiPct = (lo / sorted.length) * 100;
+    }
+  }
+
+  /* 4. station statistics */
+  const stats = [];
+  for(const st in byStation){
+    const rows = byStation[st];
+    const vals = rows.map(r=>r.aqi).filter(v=>v!==null && isFinite(v));
+    if(!vals.length) continue;
+    const severe = rows.filter(r => r.aqiCategory === 'Severe' || r.aqiCategory === 'Very Poor').length;
+    stats.push({
+      station: st,
+      n: vals.length,
+      meanAqi: mean(vals),
+      maxAqi: Math.max.apply(null, vals),
+      minAqi: Math.min.apply(null, vals),
+      stdAqi: std(vals),
+      p95: quantile(vals.slice().sort((a,b)=>a-b), 0.95),
+      exceedPct: rows.length ? (severe/rows.length*100) : 0
+    });
+  }
+  stats.sort((a,b)=> b.meanAqi - a.meanAqi);
+  state.stationStats = stats;
+}
+
+function validateAqi(data){
+  const pairs = data.filter(r => r.aqi !== null && r.pm25 !== null);
+  const rPM25 = pearson(pairs.map(r=>r.pm25), pairs.map(r=>r.aqi));
+  const pairs10 = data.filter(r => r.aqi !== null && r.pm10 !== null);
+  const rPM10 = pearson(pairs10.map(r=>r.pm10), pairs10.map(r=>r.aqi));
+
+  // monotonicity test on the sub-index function itself
+  const monotone = [];
+  for(let c=0; c<=300; c+=10){
+    monotone.push([c, subIndex(c,'pm25')]);
+  }
+  let monoOk = true;
+  for(let i=1;i<monotone.length;i++) if(monotone[i][1] < monotone[i-1][1]) monoOk = false;
+
+  // boundary checks
+  const boundaries = [
+    ['PM2.5 = 30 → 50',  subIndex(30,'pm25'), 50],
+    ['PM2.5 = 60 → 100', subIndex(60,'pm25'), 100],
+    ['PM2.5 = 90 → 200', subIndex(90,'pm25'), 200],
+    ['PM2.5 = 120 → 300',subIndex(120,'pm25'),300],
+    ['PM10 = 100 → 100', subIndex(100,'pm10'),100],
+    ['PM10 = 250 → 200', subIndex(250,'pm10'),200],
+    ['NO2 = 80 → 100',   subIndex(80,'no2'),  100]
+  ];
+
+  const aqiVals = data.map(r=>r.aqi).filter(v=>v!==null && isFinite(v));
+  const inRange = aqiVals.every(v => v >= 0 && v <= 500);
+
+  let h = '<div class="kpis">' +
+    kpi(fmt(rPM25,4), 'Corr(PM2.5, AQI)  → target &gt; 0.95', rPM25 > 0.95 ? 'ok' : 'warn') +
+    kpi(fmt(rPM10,4), 'Corr(PM10, AQI)') +
+    kpi(monoOk ? 'PASS' : 'FAIL', 'Sub-index monotonicity') +
+    kpi(inRange ? 'PASS' : 'FAIL', 'AQI within 0–500') +
+    kpi(aqiVals.length.toLocaleString(), 'Valid AQI records') +
+    '</div>';
+
+  h += '<div class="tbl-wrap" style="margin-top:12px"><table><thead><tr>' +
+       '<th>Boundary check</th><th>Computed</th><th>Expected</th><th>Status</th></tr></thead><tbody>';
+  for(const b of boundaries){
+    const ok = b[1] === b[2];
+    h += '<tr><td>'+b[0]+'</td><td>'+b[1]+'</td><td>'+b[2]+'</td>' +
+         '<td style="color:'+(ok?'#4ade80':'#f87171')+'">'+(ok?'PASS':'FAIL')+'</td></tr>';
+  }
+  h += '</tbody></table></div>';
+
+  h += '<h3 style="margin-top:18px">Station-level AQI Statistics</h3>';
+  h += '<div class="tbl-wrap"><table><thead><tr><th>Station</th><th>N</th><th>Mean AQI</th>' +
+       '<th>Max AQI</th><th>Min AQI</th><th>SD</th><th>95th pct</th><th>% days Very Poor/Severe</th></tr></thead><tbody>';
+  for(const s of state.stationStats){
+    h += '<tr><td><b>'+s.station+'</b></td><td>'+s.n+'</td><td>'+fmt(s.meanAqi,1)+'</td>' +
+         '<td>'+fmt(s.maxAqi,0)+'</td><td>'+fmt(s.minAqi,0)+'</td><td>'+fmt(s.stdAqi,1)+'</td>' +
+         '<td>'+fmt(s.p95,1)+'</td><td>'+fmt(s.exceedPct,1)+'%</td></tr>';
+  }
+  h += '</tbody></table></div>';
+  $('aqiValidation').innerHTML = h;
+
+  /* advanced metrics panel */
+  const withAqi = data.filter(r => r.aqi !== null && isFinite(r.aqi));
+  const meanBase = mean(withAqi.map(r=>r.aqi));
+  const meanW    = mean(withAqi.map(r=>r.weightedAqi).filter(v=>v!==null));
+  const mean7    = mean(withAqi.map(r=>r.aqi7day).filter(v=>v!==null && isFinite(v)));
+  const meanEwma = mean(withAqi.map(r=>r.aqiEwma).filter(v=>v!==null && isFinite(v)));
+
+  let ah = '<div class="tbl-wrap"><table><thead><tr><th>Metric</th><th>Formula</th>' +
+           '<th>Mean value</th><th>Purpose</th></tr></thead><tbody>' +
+    '<tr><td><b>CPCB AQI</b></td><td>max(sub-indices)</td><td>'+fmt(meanBase,1)+'</td>' +
+      '<td>Regulatory index as defined by CPCB</td></tr>' +
+    '<tr><td><b>Weighted composite</b></td><td>Σ(w<sub>p</sub>·SI<sub>p</sub>) / Σw<sub>p</sub></td>' +
+      '<td>'+fmt(meanW,1)+'</td><td>Health-impact-weighted blend of all pollutants</td></tr>' +
+    '<tr><td><b>7-day rolling mean</b></td><td>mean(AQI<sub>t−6…t</sub>)</td><td>'+fmt(mean7,1)+'</td>' +
+      '<td>Removes day-to-day noise, exposes trend</td></tr>' +
+    '<tr><td><b>EWMA (span 7)</b></td><td>α·AQI<sub>t</sub> + (1−α)·EWMA<sub>t−1</sub>, α=0.25</td>' +
+      '<td>'+fmt(meanEwma,1)+'</td><td>Recency-weighted trend indicator</td></tr>' +
+    '<tr><td><b>Z-score</b></td><td>(AQI − μ<sub>station</sub>) / σ<sub>station</sub></td>' +
+      '<td>0.00 (by construction)</td><td>Cross-station comparability</td></tr>' +
+    '<tr><td><b>Percentile rank</b></td><td>rank(AQI) / N × 100</td>' +
+      '<td>50.0 (median)</td><td>Relative severity within station</td></tr>' +
+    '</tbody></table></div>';
+
+  ah += '<div class="note"><b>Note on CO:</b> CPCB breakpoints for CO are defined in <b>mg/m³</b>, ' +
+        'while all other pollutants use µg/m³. If your dataset stores CO in µg/m³, the auto-detect ' +
+        'converts it (÷1000) before sub-index calculation.</div>';
+
+  $('aqiAdvanced').innerHTML = ah;
+}
+
+function kpi(value, label, status){
+  const color = status === 'ok' ? '#4ade80' : (status === 'warn' ? '#fbbf24' : '#38bdf8');
+  return '<div class="kpi"><div class="v" style="color:'+color+'">'+value+'</div>' +
+         '<div class="l">'+label+'</div></div>';
+}
+
+/* ---- AQI visualisations ---- */
+function drawAqiCharts(){
+  const data = state.clean.filter(r => r.aqi !== null && isFinite(r.aqi));
+  if(!data.length) return;
+
+  /* pie */
+  const counts = {};
+  for(const c of AQI_CATS) counts[c.name] = 0;
+  for(const r of data) if(r.aqiCategory) counts[r.aqiCategory]++;
+  const order = AQI_CATS.map(c=>c.name).filter(n => counts[n] > 0);
+  const colors = { 'Good':'#00b050', 'Satisfactory':'#92d050', 'Moderate':'#ffff00',
+                   'Poor':'#ff9900', 'Very Poor':'#ff0000', 'Severe':'#c00000' };
+
+  Plotly.newPlot('vizPie', [{
+    labels: order,
+    values: order.map(n => counts[n]),
+    type: 'pie',
+    marker: { colors: order.map(n => colors[n]), line: { color:'#1b2b3d', width: 2 } },
+    textinfo: 'label+percent',
+    textfont: { size: 11, color: '#0b1a24' },
+    hole: 0.38
+  }], Object.assign(plotLayout('AQI category distribution'), {
+    showlegend: false, margin: { l: 10, r: 10, t: 40, b: 10 }
+  }));
+
+  /* stacked bar by station */
+  const stations = [...new Set(data.map(r=>r.station))].sort();
+  const traces = AQI_CATS.map(c => ({
+    x: stations,
+    y: stations.map(st => {
+      const rows = data.filter(r => r.station === st);
+      return rows.length ? rows.filter(r => r.aqiCategory === c.name).length / rows.length * 100 : 0;
+    }),
+    name: c.name,
+    type: 'bar',
+    marker: { color: colors[c.name] }
+  }));
+
+  Plotly.newPlot('vizStack', traces, Object.assign(plotLayout('AQI category share by station (%)'), {
+    barmode: 'stack',
+    xaxis: { gridcolor:'#22303f', color:'#93a6b8', tickangle: -30 },
+    yaxis: { title: { text: '% of days', font:{ size:11, color:'#93a6b8'} }, gridcolor:'#22303f', color:'#93a6b8', range:[0,100] },
+    legend: { orientation: 'h', y: -0.25, font:{ size:10 } }
+  }));
+
+  /* AQI trend with rolling average */
+  const stationsAll = [...new Set(data.map(r=>r.station))].sort();
+  const palette = ['#38bdf8','#f472b6','#4ade80','#fbbf24','#a78bfa','#fb923c','#22d3ee','#f87171','#34d399','#e879f9'];
+  const trendTraces = [];
+  stationsAll.forEach((st, i)=>{
+    const rows = data.filter(r => r.station === st).sort((a,b)=> a.date - b.date);
+    trendTraces.push({
+      x: rows.map(r => dateKey(r.date)),
+      y: rows.map(r => r.aqi7day),
+      type: 'scatter', mode: 'lines',
+      name: st + ' (7-day)',
+      line: { color: palette[i % palette.length], width: 2 }
+    });
+  });
+
+  Plotly.newPlot('vizAqiTrend', trendTraces, Object.assign(plotLayout('7-day rolling mean AQI by station'), {
+    xaxis: { title: { text:'Date', font:{size:11,color:'#93a6b8'} }, gridcolor:'#22303f', color:'#93a6b8' },
+    yaxis: { title: { text:'AQI (7-day rolling mean)', font:{size:11,color:'#93a6b8'} }, gridcolor:'#22303f', color:'#93a6b8' },
+    shapes: [
+      { type:'line', xref:'paper', x0:0, x1:1, y0:100, y1:100, line:{ color:'#4ade80', width:1, dash:'dot' } },
+      { type:'line', xref:'paper', x0:0, x1:1, y0:200, y1:200, line:{ color:'#fbbf24', width:1, dash:'dot' } },
+      { type:'line', xref:'paper', x0:0, x1:1, y0:300, y1:300, line:{ color:'#fb923c', width:1, dash:'dot' } },
+      { type:'line', xref:'paper', x0:0, x1:1, y0:400, y1:400, line:{ color:'#f87171', width:1, dash:'dot' } }
+    ],
+    annotations: [
+      { xref:'paper', x:1.005, y:100, text:'Satisfactory', showarrow:false, font:{size:9,color:'#4ade80'} },
+      { xref:'paper', x:1.005, y:200, text:'Moderate', showarrow:false, font:{size:9,color:'#fbbf24'} },
+      { xref:'paper', x:1.005, y:300, text:'Poor', showarrow:false, font:{size:9,color:'#fb923c'} },
+      { xref:'paper', x:1.005, y:400, text:'Very Poor', showarrow:false, font:{size:9,color:'#f87171'} }
+    ]
+  }), { responsive: true });
+}
+
+/* ==========================================================================
+   TAB 6 : EXPORT
+   ========================================================================== */
+function refreshExport(){
+  const data = state.clean;
+  if(!data.length){ $('exportSummary').innerHTML = '<p style="color:#93a6b8">No processed data yet.</p>'; return; }
+
+  let h = '<div class="kpis">' +
+    '<div class="kpi"><div class="v">'+data.length.toLocaleString()+'</div><div class="l">Clean records</div></div>' +
+    '<div class="kpi"><div class="v">'+[...new Set(data.map(r=>r.station))].length+'</div><div class="l">Stations</div></div>';
+
+  if(state.aqiDone){
+    const withAqi = data.filter(r=>r.aqi!==null && isFinite(r.aqi));
+    const cats = {};
+    for(const r of withAqi) cats[r.aqiCategory] = (cats[r.aqiCategory]||0)+1;
+    let dominant = '—', dmax = -1;
+    for(const k in cats) if(cats[k] > dmax){ dmax = cats[k]; dominant = k; }
+    const prim = {};
+    for(const r of withAqi) if(r.primaryPollutant) prim[r.primaryPollutant] = (prim[r.primaryPollutant]||0)+1;
+    let primDom = '—', pmax = -1;
+    for(const k in prim) if(prim[k] > pmax){ pmax = prim[k]; primDom = k; }
+    const meanAqi = mean(withAqi.map(r=>r.aqi));
+
+    h += '<div class="kpi"><div class="v">'+fmt(meanAqi,1)+'</div><div class="l">Mean AQI (all stations)</div></div>' +
+         '<div class="kpi"><div class="v" style="font-size:16px">'+dominant+'</div><div class="l">Dominant AQI category</div></div>' +
+         '<div class="kpi"><div class="v" style="font-size:16px">'+LABEL[primDom]+'</div><div class="l">Most frequent primary pollutant</div></div>';
+  }
+  h += '</div>';
+
+  if(state.stationStats){
+    h += '<h3>Station ranking by mean AQI</h3><div class="tbl-wrap"><table><thead><tr>' +
+         '<th>Rank</th><th>Station</th><th>Mean AQI</th><th>Category</th><th>Max</th><th>% Very Poor/Severe</th></tr></thead><tbody>';
+    state.stationStats.forEach((s, i)=>{
+      const cat = aqiCategory(s.meanAqi);
+      h += '<tr><td>'+(i+1)+'</td><td><b>'+s.station+'</b></td><td>'+fmt(s.meanAqi,1)+'</td>' +
+           '<td><span class="pill '+aqiCategoryClass(cat)+'">'+cat+'</span></td>' +
+           '<td>'+fmt(s.maxAqi,0)+'</td><td>'+fmt(s.exceedPct,1)+'%</td></tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+
+  $('exportSummary').innerHTML = h;
+}
+
+function downloadCSV(filename, rows, columns){
+  if(!rows.length){ alert('No data to export.'); return; }
+  const lines = [columns.join(',')];
+  for(const r of rows){
+    lines.push(columns.map(c=>{
+      let v = r[c];
+      if(v instanceof Date) v = dateKey(v);
+      if(v === null || v === undefined) return '';
+      const s = String(v);
+      return /[",\n]/.test(s) ? '"' + s.replace(/"/g,'""') + '"' : s;
+    }).join(','));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=> URL.revokeObjectURL(a.href), 2000);
+}
+
+/* ==========================================================================
+   EVENT WIRING
+   ========================================================================== */
+$('fileInput').addEventListener('change', function(e){
+  if(e.target.files && e.target.files.length){ handleFiles(e.target.files); e.target.value = ''; }
+});
+$('btnDemo').addEventListener('click', generateDemoData);
+$('btnClear').addEventListener('click', function(){
+  state.raw = []; state.clean = []; state.stations = []; state.aqiDone = false;
+  clearLog('log-load'); clearLog('log-pre'); clearLog('log-aqi');
+  refreshLoadTab();
+  $('rawPreview').innerHTML = '';
+  $('auditBefore').innerHTML = '';
+  $('auditAfter').innerHTML = '';
+  $('edaStats').innerHTML = '';
+  $('aqiValidation').innerHTML = '';
+  logTo('log-load', 'Data cleared.', 'warn');
+});
+$('btnClean').addEventListener('click', cleanPipeline);
+$('btnAqi').addEventListener('click', runAqi);
+
+$('dlProcessed').addEventListener('click', function(){
+  const cols = ['date','station'].concat(POLLUTANTS)
+    .concat(['year','month','dayOfWeek','season','pmRatio'])
+    .concat(['si_pm25','si_pm10','si_no2','si_so2','si_co','si_o3','si_nh3'])
+    .concat(['aqi','aqiCategory','primaryPollutant','weightedAqi','aqi7day','aqiEwma','aqiZ','aqiPct']);
+  downloadCSV('gujarat_air_quality_processed.csv', state.clean, cols);
+});
+$('dlSummary').addEventListener('click', function(){
+  if(!state.stationStats){ alert('Run the AQI step first (Tab 5).'); return; }
+  downloadCSV('gujarat_station_summary.csv', state.stationStats,
+    ['station','n','meanAqi','maxAqi','minAqi','stdAqi','p95','exceedPct']);
+});
+$('dlMonthly').addEventListener('click', function(){
+  const data = state.clean.filter(r => r.aqi !== null && isFinite(r.aqi));
+  if(!data.length){ alert('Run the AQI step first (Tab 5).'); return; }
+  const buckets = {};
+  for(const r of data){
+    const k = r.station + '|' + monthKey(r.date);
+    (buckets[k] = buckets[k] || []).push(r.aqi);
+  }
+  const out = Object.keys(buckets).sort().map(k=>{
+    const parts = k.split('|');
+    return { station: parts[0], month: parts[1], meanAqi: Math.round(mean(buckets[k])*10)/10, n: buckets[k].length };
+  });
+  downloadCSV('gujarat_monthly_aqi.csv', out, ['station','month','meanAqi','n']);
+});
+
+/* ==========================================================================
+   INIT
+   ========================================================================== */
+renderBreakpoints();
+logTo('log-load', 'Ready. Upload CPCB/GPCB CSV files, or click "Generate Demo Gujarat Dataset" to explore the full pipeline.', 'info');
+</script>
+</body>
+</html>
